@@ -1,112 +1,110 @@
-# 🛡️ Risk-Informed Qualification Framework for Robotic Remote Shutdown
+# A Risk-Informed Qualification Framework for Robotic Remote Shutdown
 
-**AA228V / CS238V Final Project | Stanford University**
+This repository contains the simulation environment and core verification pipelines for qualifying autonomous mobile manipulators executing remote shutdown operations under communication latency and radiation-induced sensor noise.
 
-This framework provides a rigorous validation pipeline for a mobile robot tasked with navigating a high-radiation environment to perform a manual valve shutdown. It evaluates system safety by combining **Linearized Interval-Arithmetic Reachability** with **GPU-Accelerated Defensive Mixture Importance Sampling**.
+**Live Interactive Visualization Dashboard:** [https://riacheruvu.github.io/nuclear-robotic-shutdown/](https://riacheruvu.github.io/nuclear-robotic-shutdown/)
 
-## 📖 Background & Publication
+<img width="2188" height="1114" alt="image" src="https://github.com/user-attachments/assets/d8369dde-8661-4fea-8f5d-68728ce02cb0" />
 
-This repository is the implementation of the framework discussed in:  
-**[Modeling Safety-Critical Robots for Nuclear Engineering](https://riacheruvu.medium.com/risk-informed-robotic-shutdown-for-nuclear-engineering-1c154c72fbaa)**  
+This repository is the implementation of the framework discussed in: **[Modeling Safety-Critical Robots for Nuclear Engineering](https://riacheruvu.medium.com/risk-informed-robotic-shutdown-for-nuclear-engineering-1c154c72fbaa)**  
 *Published on Medium | April 2026*
 
 ---
 
-## 🏗️ 7‑D Augmented Dynamics
+## Overview
 
-To capture realistic actuation delays common in remote-handling robotics, the system state \(s\) is augmented with a two-step lag buffer:
+Traditional safety protocols for robotic manual valve actuation in high-dose nuclear environments rely on subjective margins, which can produce excessive mission downtime or dangerously unquantified tail risks. This framework introduces a deterministic, risk-informed qualification methodology that leverages:
 
-\[
-s = [x,\; y,\; \theta,\; v_{t-1},\; \omega_{t-1},\; v_{t-2},\; \omega_{t-2}]^T
-\]
-
-In this model, the kinematics at time \(t\) are driven by the control command issued at \(t-2\), forcing the safety framework to account for the physical drift between command and execution.
+*   **7D Augmented State Space:** A Partially Observable Markov Decision Process (POMDP) formulation that explicitly encodes a 2-step temporal communication latency lag as a deterministic First-In-First-Out (FIFO) buffer.
+*   **Linearized Interval Reachability:** Conserved axis-aligned forward propagation to generate model-based safety certificates ($\sigma^*$) over an extended mission horizon.
+*   **Defensive Mixture Importance Sampling:** A GPU-accelerated rare-event simulation layer utilizing a stabilized 70/30 distribution split to precisely bound catastrophic tracking and radiation tail risks where naive Monte Carlo fails.
 
 ---
 
-## 🚀 Key Features
+## Repository Architecture
 
-- **7‑D Augmented Dynamics:** Models kinematics with a two-step temporal lag buffer (\(u_{t-2}\) drives motion) to simulate realistic actuation delays.  
-- **Formal Reachability:** Propagates axis-aligned bounding boxes (`IntervalBoxes`) through linearized dynamics with Minkowski-sum noise inflation to provide formal safety bounds.  
-- **Defensive Mixture Importance Sampling (IS):** GPU-accelerated estimator that biases both Gaussian slip noise and Bernoulli “salt-and-pepper” sensor scrambles to accurately estimate rare failure probabilities (\(P_{\text{fail}}\)).  
-- **Radiation Physics:** Includes a \(^{60}\text{Co}\) gamma-ray model with air attenuation and background dose rates for realistic risk assessment.  
-- **Animated Validation Dashboard:** Generates real-time visualizations of stochastic rollouts, formal bounds, and radiation heatmaps.
+The codebase is organized as follows:
 
----
+```text
+nuclear-robotic-shutdown-main/
+├── index.html               # The interactive dashboard hosted on GitHub Pages
+├── main.py                 # Core simulation driver coordinating reachability and IS
+├── config.py               # Global environment parameters (Co-60 constant, state indices)
+├── dynamics.py             # Closed-loop 7D lag transition model and controller Jacobians
+├── reachability.py         # Linearized IntervalBox forward propagation loop
+├── importance_sampling.py   # 70/30 Defensive Mixture proposal distributions and weights
+├── ablation.py             # Baseline evaluations comparing MC, 2.2σ, and 3.2σ variants
+├── visualization.py        # Local visualization generator for offline data logging
+└── LICENSE                 # Open-source licensing terms
 
-## 📂 Project Structure
+```
 
-| File | Description |
-|------|-------------|
-| `main.py` | Entry point for the validation pipeline and metrics reporting. |
-| `dynamics.py` | Defines the 7‑D POMDP dynamics and proportional heading controller. |
-| `reachability.py` | Implements interval-arithmetic reachability with \(\sqrt{\Delta t}\) noise scaling. |
-| `importance_sampling.py` | Core GPU logic for parallel stochastic rollouts and IS weighting. |
-| `ablation.py` | Compares Naive Monte Carlo vs. Defensive and Aggressive IS strategies. |
-| `config.py` | Constants for environment (\(^{60}\text{Co}\) activity), robot gains, and safety thresholds. |
-| `visualization.py` | Gamma-dose heatmap and `FuncAnimation` dashboard logic. |
+> **Note on the Browser-Based Interactive Visual:** The `index.html` dashboard deployed via GitHub Pages operates on a reduced 3-state channel `[cross-track error, lag_1, lag_2]` to maintain real-time rendering. The high-fidelity $95.4\%$ strict mission success and bounded failure probability metrics reported in the manuscript are generated by the full 7D kinematic state space via the underlying core python validation engine (`main.py`).
 
 ---
 
-## 🛠️ Technical Methodology
+## Core Simulation Components
 
-### 1. Reachability Analysis
+### 1. Verification Parameters (`config.py`)
 
-The framework propagates uncertainty through:
+Standardizes system constants including the 15 Ci Cobalt-60 source parameters, target valve location, geometric boundary limits ($R_{\text{safe}} = 0.5\text{m}$, $R_{\text{task}} = 0.15\text{m}$), and the 5% discrete transient "salt-and-pepper" sensor scramble profile.
 
-\[
-s_{t+1} = f(s_t) + w_t
-\]
+### 2. Kinematic Lag Dynamics (`dynamics.py`)
 
-where \(w_t\) includes both slip noise and observation-induced control noise. A linearized Jacobian \(A = \partial f / \partial s\) bounds the state evolution within a safe corridor \(R_{\text{safe}}\).
+Computes the analytical Jacobians ($A_t$) required to project uncertainty through the 2-step First-In-First-Out (FIFO) actuator lag buffer without causing exponential branching.
 
----
+### 3. Safety Certification (`reachability.py`)
 
-### 2. Importance Sampling
+Implements the axis-aligned `IntervalBox` forward propagation to evaluate envelope intersections with the physical corridor perimeter. It issues the model-based safety certificate $\sigma^*$ for active proportional tracking.
 
-To capture rare failures that Naive Monte Carlo misses, we use a **Defensive Mixture**:
+### 4. Variance Reduction (`importance_sampling.py` & `ablation.py`)
 
-- **Nominal Distribution (\(\alpha = 0.7\))**  
-  Baseline noise \((\sigma_{\text{slip}},\; P_{\text{scramble}})\)
-
-- **Biased Distribution (\(1 - \alpha = 0.3\))**  
-  Noise amplified by  
-  \[
-  \sigma_{\text{slip}} \times \text{bias\_factor}, \quad
-  P_{\text{scramble}} \times \text{bias\_factor}
-  \]
-
-The **Joint Likelihood Fix** tracks both continuous Gaussian slips and discrete Bernoulli scrambles to prevent weight collapse under high-variance conditions.
+Houses the GPU-accelerated validation layer. It runs the variance reduction algorithms that stress-test the tracking controller against cascading noise strikes, generating the statistical proof required for risk-informed regulatory standards.
 
 ---
 
-## 📊 Performance Thresholds
+## Getting Started
 
-1. **Task Liveness:** Mission success rate (reaching the valve within **0.15 m**) must exceed **90%** at a 95% CI.  
-2. **Safety Integrity:** Total cumulative dose must remain below  
-   \[
-   D_{\max} = 50.0\ \text{mSv}
-   \]
+### Installation
 
----
+Ensure you have Python 3.8+ and PyTorch installed. Clone the repository and install the standard numerical stack:
 
-## 🏃 Getting Started
+```bash
+git clone [https://github.com/riacheruvu/nuclear-robotic-shutdown.git](https://github.com/riacheruvu/nuclear-robotic-shutdown.git)
+cd nuclear-robotic-shutdown
+pip install -r requirements.txt
 
-### Prerequisites
+```
 
-- Python 3.8+  
-- `torch` (with CUDA support)  
-- `numpy`, `matplotlib`
+*(Note: Ensure your `requirements.txt` includes `torch`, `numpy`, and `matplotlib` if generating offline plots).*
 
-### Execution
+### Running the Validation Pipeline
 
-Run the full validation pipeline:
+To run the full 10,000 rollout verification suite and compare sampling architectures (Naive Monte Carlo vs. Defensive Mixture IS baselines), execute the main simulation driver:
 
 ```bash
 python main.py
+
 ```
 
-This produces:
+To isolate the statistical variance profiles and evaluate your customized proposal distribution directly:
 
-- `nuclear_shutdown_final.png` — static snapshot  
-- `shutdown_animation.mp4` — full dashboard animation
+```bash
+python ablation.py
+
+```
+
+---
+
+## Deployed Supplementary Artifact
+
+The included `index.html` requires no build configuration or localized dependencies. It relies on `KaTeX` for browser-side LaTeX mathematical typesetting. To serve it locally for presentation purposes:
+
+```bash
+python -m http.server 8000
+
+```
+
+Then navigate to `http://localhost:8000` in any standard browser.
+
+```
