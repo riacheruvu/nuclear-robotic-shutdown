@@ -1,0 +1,59 @@
+# Higher sensor-scramble rate: stresses observation integrity.
+name: high_scramble
+description: >
+  Same geometry as baseline, but salt-and-pepper scrambles are more frequent
+  (p=0.15). Useful for testing whether the controller still reaches the valve.
+seed: 7
+
+robot:
+  initial_pose: [1.2, 0.6, 3.4906585]
+  dynamics: lag_unicycle
+  lag_steps: 2
+  controller: proportional_heading
+  controller_params:
+    k_p: 2.5
+    v_nominal: 0.5
+
+environment:
+  dt: 0.1
+  horizon: 100
+  hazard: point_source_co60
+  hazard_params:
+    activity_ci: 15.0
+    gamma_const: 1.32
+    mu_air: 0.0001
+    d_bg_msv_s: 0.05
+    valve_pos: [0.0, 0.0]
+  task_radius_m: 0.15
+  corridor_radius_m: 0.5
+
+noise:
+  model: slip_scramble
+  params:
+    sigma_slip: 0.05
+    p_scramble: 0.15
+    scramble_xy_range: 2.0
+
+failure:
+  model: dose_or_corridor
+
+verification:
+  reachability:
+    enabled: true
+    sigma_obs: 0.02
+  rare_events:
+    enabled: true
+    method: defensive_mixture
+    n_rollouts: 2000
+    alpha: 0.7
+    bias_factor: 2.2
+  ablation: false
+
+thresholds:
+  min_mission_success: 0.90
+  max_p_fail: null
+  max_dose_msv: 50.0
+
+output:
+  save_plot: true
+  save_animation: false

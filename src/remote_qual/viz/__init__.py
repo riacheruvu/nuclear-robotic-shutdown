@@ -1,0 +1,1 @@
+"""Scientifically grounded visualization helpers."""
