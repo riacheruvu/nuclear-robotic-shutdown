@@ -110,14 +110,28 @@ transparent teaching model (see surveys on telerobotic time delay).
 Axis-aligned **interval boxes**, linearized closed-loop map, Minkowski sum noise bounds
 scaled like \(\sqrt{\Delta t}\).
 
+### Modes
+
+| Mode | Behavior |
+|---|---|
+| **`receding` (default)** | Every `receding_window` steps, re-seed a small box on the **nominal** state and re-propagate. Mitigates interval **wrapping / blow-up** for long missions. Runtime-assurance style operational assumption: re-cert is meaningful if the true state stayed near the plan. |
+| **`open_loop`** | One tube for the whole horizon — often becomes vacuous (huge boxes) even when stochastic rollouts look fine. |
+| **`both` / compare** | Primary receding result + open-loop companion metrics in the report. |
+
+### Diagnostics
+
+- **XY box area** \(w_x \cdot w_y\) over time (and peak **growth ratio** vs initial).
+- **`blowup_suspected`** if peak growth ≥ threshold (default 50×).
+- Not a Hamilton–Jacobi value function; not zonotopes. Those are future backends.
+
 ### Assumptions / limitations
 
 1. Linearization can miss strong nonlinear effects.
-2. Boxes over-approximate (may be conservative / “vacuous” over long horizons).
+2. Boxes over-approximate; open-loop tubes may be **vacuous** over long horizons.
 3. Observation noise enters through the **control lag channel**, not by teleporting the true state.
+4. Receding re-seeds assume proximity to the nominal path (not a full belief-state certificate).
 
-**Context:** set-based reachability ecosystems (JuliaReach, CORA, CommonRoad-Reach)
-provide heavier engines; v1 is a domain-specific lightweight certificate.
+**Context:** set-based reachability (JuliaReach, CORA); HJ reachability scales poorly on grids in high dimension (classic “curse of dimensionality”); neural HJ / CBF certificates are optional research extensions — not required for this toolkit’s default report.
 
 ---
 

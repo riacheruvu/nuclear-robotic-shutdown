@@ -34,16 +34,26 @@ def export_markdown_summary(report: QualificationReport, path: PathLike) -> Path
         f"± {m.get('mission_success_ci95_halfwidth', float('nan')):.1%} (95% CI half-width)",
         f"- P(fail): {m.get('p_fail', float('nan')):.6f} ± {m.get('p_fail_std', float('nan')):.6f}",
         f"- ESS: {m.get('ess', float('nan')):.1f} / {m.get('n_rollouts', '?')}",
-        f"- Reachability unsafe: {m.get('reachability_unsafe')}",
+        f"- Reachability unsafe: {m.get('reachability_unsafe')} "
+        f"(mode={m.get('reachability_mode')})",
+        f"- Box XY growth ratio: {m.get('reachability_growth_ratio')} "
+        f"(blow-up suspected={m.get('reachability_blowup_suspected')})",
+        f"- Open-loop companion unsafe: {m.get('reachability_open_loop_unsafe')}",
         "",
         f"## Verdict: **{v.get('overall', 'n/a').upper()}**",
         f"- Mission liveness: {v.get('mission_liveness')}",
         f"- P(fail) threshold: {v.get('p_fail')}",
         "",
+    ]
+    if m.get("reachability_notes"):
+        lines.extend(["## Reachability notes", str(m.get("reachability_notes")), ""])
+    lines.extend(
+        [
         f"> {report.disclaimer}",
         "",
         "## Key assumptions",
-    ]
+        ]
+    )
     for a in report.assumptions:
         lines.append(f"- {a}")
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")

@@ -46,6 +46,10 @@ failure:
 verification:
   reachability:
     enabled: true
+    mode: receding              # receding | open_loop | both
+    receding_window: 20         # re-certify every N steps on nominal
+    compare_open_loop: true     # also report open-loop blow-up diagnostics
+    blowup_growth_threshold: 50
     sigma_obs: 0.02
   rare_events:
     enabled: true

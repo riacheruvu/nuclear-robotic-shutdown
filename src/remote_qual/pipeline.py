@@ -45,6 +45,9 @@ DEFAULT_ASSUMPTIONS: List[str] = [
     "Task success = base within task_radius of the valve (no manipulator / handwheel model).",
     "Sensor scrambles corrupt (x, y) only; heading is not scrambled in v1.",
     "Reachability uses linearized interval boxes (conservative approximation, not exact sets).",
+    "Default formal mode is receding-horizon re-certification (re-seed small boxes on the "
+    "nominal every N steps) to mitigate interval wrapping/blow-up; not full Hamilton–Jacobi.",
+    "XY box-area growth is a diagnostic for vacuous certificates — large growth ⇒ distrust open-loop tubes.",
     "Outputs are research evidence, not regulatory certification.",
 ]
 
@@ -111,7 +114,8 @@ def run_qualification_config(
         hazard=bundle.hazard,
     )
 
-    # Reachability
+    # Reachability (receding-horizon by default + volume diagnostics)
+    reach_result = None
     reach_unsafe = False
     reach_step = -1
     boxes = []
@@ -119,7 +123,7 @@ def run_qualification_config(
         sigma_slip = float((cfg.raw.get("noise") or {}).get("params", {}).get("sigma_slip", 0.05))
         k_p = float(getattr(bundle.controller, "k_p", 2.5))
         v_nom = float(getattr(bundle.controller, "v_nominal", 0.5))
-        reach_unsafe, reach_step, boxes = reachability_check(
+        reach_result = reachability_check(
             s0,
             dynamics=bundle.dynamics,
             controller=bundle.controller,
@@ -131,7 +135,14 @@ def run_qualification_config(
             corridor_radius=cfg.corridor_radius_m,
             k_p=k_p,
             v_nominal=v_nom,
+            mode=cfg.reachability_mode,
+            receding_window=cfg.receding_window,
+            compare_open_loop=cfg.compare_open_loop,
+            blowup_growth_threshold=cfg.blowup_growth_threshold,
         )
+        reach_unsafe = reach_result.is_unsafe
+        reach_step = reach_result.first_unsafe_step
+        boxes = reach_result.boxes
 
     # Rare events
     rare: Dict[str, Any] = {}
@@ -219,7 +230,41 @@ def run_qualification_config(
         except Exception as exc:
             artifacts["animation_error"] = str(exc)
 
-    summary = _plain_english_summary(cfg, rare, reach_unsafe, thr)
+    summary = _plain_english_summary(cfg, rare, reach_result, thr)
+
+    reach_metrics: Dict[str, Any] = {
+        "reachability_unsafe": reach_unsafe,
+        "reachability_first_unsafe_step": reach_step if reach_unsafe else None,
+        "reachability_mode": None,
+        "reachability_receding_window": None,
+        "reachability_max_xy_area_m2": None,
+        "reachability_initial_xy_area_m2": None,
+        "reachability_growth_ratio": None,
+        "reachability_blowup_suspected": None,
+        "reachability_recert_steps": None,
+        "reachability_open_loop_unsafe": None,
+        "reachability_open_loop_growth_ratio": None,
+        "reachability_notes": None,
+    }
+    if reach_result is not None:
+        reach_metrics.update(
+            {
+                "reachability_mode": reach_result.mode,
+                "reachability_receding_window": reach_result.receding_window,
+                "reachability_max_xy_area_m2": reach_result.max_xy_area,
+                "reachability_initial_xy_area_m2": reach_result.initial_xy_area,
+                "reachability_growth_ratio": reach_result.growth_ratio,
+                "reachability_blowup_suspected": reach_result.blowup_suspected,
+                "reachability_recert_steps": list(reach_result.recert_steps),
+                "reachability_open_loop_unsafe": reach_result.open_loop_is_unsafe,
+                "reachability_open_loop_growth_ratio": reach_result.open_loop_growth_ratio,
+                "reachability_notes": reach_result.notes,
+                # Downsample area series for JSON (full series can be long)
+                "reachability_xy_area_series_m2": _downsample_series(
+                    reach_result.xy_area_series, max_points=40
+                ),
+            }
+        )
 
     report = QualificationReport(
         toolkit_version=__version__,
@@ -236,9 +281,8 @@ def run_qualification_config(
             "n_rollouts": rare.get("n_rollouts"),
             "mean_dose_msv": rare.get("mean_dose"),
             "max_dose_msv_observed": rare.get("max_dose"),
-            "reachability_unsafe": reach_unsafe,
-            "reachability_first_unsafe_step": reach_step if reach_unsafe else None,
             "nominal_length_steps": int(len(nominal) - 1),
+            **reach_metrics,
         },
         thresholds=thr,
         methods={
@@ -246,7 +290,15 @@ def run_qualification_config(
             "controller": cfg.raw.get("robot", {}).get("controller"),
             "noise": cfg.raw.get("noise", {}).get("model"),
             "hazard": cfg.raw.get("environment", {}).get("hazard"),
-            "reachability": "interval_box" if cfg.reachability_enabled else None,
+            "reachability": (
+                f"interval_box/{reach_result.mode}" if reach_result is not None else None
+            ),
+            "reachability_params": {
+                "mode": cfg.reachability_mode,
+                "receding_window": cfg.receding_window,
+                "compare_open_loop": cfg.compare_open_loop,
+                "blowup_growth_threshold": cfg.blowup_growth_threshold,
+            },
             "rare_events": rare.get("method"),
             "rare_events_params": {
                 "alpha": cfg.alpha,
@@ -309,7 +361,16 @@ def _run_ablation(cfg, bundle, s0, nominal, device):
     }
 
 
-def _plain_english_summary(cfg, rare, reach_unsafe, thr) -> str:
+def _downsample_series(series, max_points: int = 40):
+    if not series:
+        return []
+    if len(series) <= max_points:
+        return [float(x) for x in series]
+    idx = np.linspace(0, len(series) - 1, max_points).astype(int)
+    return [float(series[i]) for i in idx]
+
+
+def _plain_english_summary(cfg, rare, reach_result, thr) -> str:
     ms = rare.get("mission_success_rate")
     ci = rare.get("mission_success_ci95_halfwidth")
     pf = rare.get("p_fail")
@@ -327,14 +388,30 @@ def _plain_english_summary(cfg, rare, reach_unsafe, thr) -> str:
             f"Estimated safety failure probability P(fail) ≈ {pf:.4f} "
             f"(lower is better; rare-event estimator used)."
         )
-    if reach_unsafe:
-        parts.append(
-            "Formal reachability flagged that the uncertainty box left the corridor "
-            "at least once (model-based warning under stated noise bounds)."
-        )
+    if reach_result is None:
+        parts.append("Formal reachability was disabled for this run.")
     else:
+        mode = reach_result.mode
+        if reach_result.is_unsafe:
+            parts.append(
+                f"Formal reachability ({mode}) flagged a corridor exit at step "
+                f"{reach_result.first_unsafe_step} under stated noise bounds."
+            )
+        else:
+            parts.append(
+                f"Formal reachability ({mode}) did not find a corridor exit "
+                "(still an approximate interval model — see assumptions)."
+            )
         parts.append(
-            "Formal reachability did not find a corridor exit under the linearized "
-            "interval model (still approximate — see assumptions)."
+            f"Peak XY box area growth ≈ {reach_result.growth_ratio:.1f}× initial "
+            f"(blow-up flag={'yes' if reach_result.blowup_suspected else 'no'})."
         )
+        if (
+            reach_result.open_loop_is_unsafe is True
+            and not reach_result.is_unsafe
+        ):
+            parts.append(
+                "Open-loop companion tube failed while receding held — typical "
+                "interval wrapping; receding re-certification is the preferred default."
+            )
     return " ".join(parts)

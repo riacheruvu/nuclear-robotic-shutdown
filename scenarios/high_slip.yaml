@@ -39,6 +39,9 @@ failure:
 verification:
   reachability:
     enabled: true
+    mode: receding
+    receding_window: 20
+    compare_open_loop: true
     sigma_obs: 0.02
   rare_events:
     enabled: true

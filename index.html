@@ -161,7 +161,7 @@ footer{margin-top:28px;text-align:center;font-family:var(--mono);font-size:11px;
           <span><i class="dot" style="background:var(--sky)"></i>live robot</span>
           <span><i class="dash"></i>nominal path</span>
           <span><i class="sq" style="background:var(--vermillion)"></i>corridor</span>
-          <span><i class="sq" style="background:transparent;border:2px solid var(--sky)"></i>reach box</span>
+          <span><i class="sq" style="background:transparent;border:2px solid var(--sky)"></i>reach box (receding)</span>
           <span><i class="dot" style="background:var(--purple)"></i>MC success</span>
           <span><i class="dot" style="background:var(--orange)"></i>MC fail</span>
         </div>
@@ -182,6 +182,8 @@ footer{margin-top:28px;text-align:center;font-family:var(--mono);font-size:11px;
             <div class="metric"><div class="lbl">Max corridor dev</div><div class="val" id="mDev">—</div></div>
             <div class="metric"><div class="lbl">Time / step</div><div class="val" id="mTime">—</div></div>
             <div class="metric"><div class="lbl">Scrambles</div><div class="val" id="mScr">—</div></div>
+            <div class="metric"><div class="lbl">Reach box area</div><div class="val" id="mBox">—</div></div>
+            <div class="metric"><div class="lbl">Reach mode</div><div class="val" id="mRMode">receding</div></div>
             <div class="metric wide"><div class="lbl">Mission status</div><div class="val" id="mStatus">running</div></div>
           </div>
           <div class="verdict ok" id="verdict">Status updates as the robot moves.</div>
@@ -386,7 +388,11 @@ footer{margin-top:28px;text-align:center;font-family:var(--mono);font-size:11px;
   let placeMode = false;
   let dragging = false;
   let nomPath = nominalPath(startPose, HORIZON);
-  let reachBox = null; // {lo:[x,y], hi:[x,y]} simplified
+  let reachBox = null; // {lo:[x,y], hi:[x,y]} simplified teaching tube
+  let reachStepsInWindow = 0;
+  const REACH_WINDOW = 20; // match remote_qual receding_window default
+  let boxArea0 = 0;
+  let boxAreaPeak = 0;
   let ghosts = []; // {pts:[[x,y]...], status}
 
   function distToNom(x, y) {
@@ -410,7 +416,22 @@ footer{margin-top:28px;text-align:center;font-family:var(--mono);font-size:11px;
     failReason = "";
     nomPath = nominalPath(startPose, HORIZON);
     reachBox = { lo: [state[0] - 0.02, state[1] - 0.02], hi: [state[0] + 0.02, state[1] + 0.02] };
+    reachStepsInWindow = 0;
+    boxArea0 = (0.04) * (0.04);
+    boxAreaPeak = boxArea0;
     updateMetrics();
+  }
+
+  function seedReachOnNominal() {
+    // Receding re-cert: re-center small box on nearest nominal point
+    let best = nomPath[0], bd = Infinity;
+    for (let i = 0; i < nomPath.length; i++) {
+      const d = Math.hypot(state[0] - nomPath[i][0], state[1] - nomPath[i][1]);
+      if (d < bd) { bd = d; best = nomPath[i]; }
+    }
+    const cx = best[0], cy = best[1];
+    reachBox = { lo: [cx - 0.02, cy - 0.02], hi: [cx + 0.02, cy + 0.02] };
+    reachStepsInWindow = 0;
   }
 
   function missionStep() {
@@ -439,21 +460,28 @@ footer{margin-top:28px;text-align:center;font-family:var(--mono);font-size:11px;
     const dev = distToNom(state[0], state[1]);
     if (dev > maxDev) maxDev = dev;
 
-    // simplified reachability box inflate (teaching)
+    // Receding-horizon teaching tube (Python does full 7-D interval math)
     if (P.reach && reachBox) {
+      if (reachStepsInWindow >= REACH_WINDOW) {
+        seedReachOnNominal();
+      }
       const inflate = (P.sigma + 0.02) * Math.sqrt(DT) * 3;
-      // pull toward nominal center + expand
       const cx = 0.5 * (reachBox.lo[0] + reachBox.hi[0]);
       const cy = 0.5 * (reachBox.lo[1] + reachBox.hi[1]);
-      // move box center roughly with state, expand
-      const nx = 0.7 * cx + 0.3 * state[0];
-      const ny = 0.7 * cy + 0.3 * state[1];
-      const hx = 0.5 * (reachBox.hi[0] - reachBox.lo[0]) + inflate;
-      const hy = 0.5 * (reachBox.hi[1] - reachBox.lo[1]) + inflate;
-      // mild shrink bias toward tracking (honest: full interval method lives in Python)
-      const shrink = 0.985;
-      reachBox.lo = [nx - hx * shrink, ny - hy * shrink];
-      reachBox.hi = [nx + hx * shrink, ny + hy * shrink];
+      // track nominal direction lightly
+      let nref = nomPath[Math.min(stepCount, nomPath.length - 1)];
+      const nx = 0.55 * cx + 0.45 * nref[0];
+      const ny = 0.55 * cy + 0.45 * nref[1];
+      let hx = 0.5 * (reachBox.hi[0] - reachBox.lo[0]) + inflate;
+      let hy = 0.5 * (reachBox.hi[1] - reachBox.lo[1]) + inflate;
+      // mild shrink inside a window (honest: full linear map is in Python)
+      const shrink = 0.99;
+      hx *= shrink; hy *= shrink;
+      reachBox.lo = [nx - hx, ny - hy];
+      reachBox.hi = [nx + hx, ny + hy];
+      reachStepsInWindow++;
+      const area = Math.max(0, (reachBox.hi[0] - reachBox.lo[0]) * (reachBox.hi[1] - reachBox.lo[1]));
+      if (area > boxAreaPeak) boxAreaPeak = area;
     }
 
     if (cumDose > P.dmax) {
@@ -743,6 +771,16 @@ footer{margin-top:28px;text-align:center;font-family:var(--mono);font-size:11px;
     el("mDev").textContent = maxDev.toFixed(3) + " m";
     el("mTime").textContent = (stepCount * DT).toFixed(1) + " s · " + stepCount;
     el("mScr").textContent = String(scrambles);
+    if (reachBox) {
+      const area = Math.max(0, (reachBox.hi[0] - reachBox.lo[0]) * (reachBox.hi[1] - reachBox.lo[1]));
+      const growth = boxArea0 > 0 ? area / boxArea0 : 1;
+      el("mBox").textContent = area.toFixed(4) + " m²";
+      el("mBox").className = "val" + (growth > 20 ? " warn" : growth > 50 ? " bad" : "");
+      el("mRMode").textContent = "receding/" + REACH_WINDOW;
+    } else {
+      el("mBox").textContent = "—";
+      el("mRMode").textContent = "off";
+    }
 
     const st = el("mStatus");
     const vd = el("verdict");

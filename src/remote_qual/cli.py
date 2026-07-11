@@ -90,11 +90,24 @@ def main(argv: list[str] | None = None) -> int:
         if m.get("p_fail") is not None:
             print(f"  P(fail):         {m['p_fail']:.6f} ± {m['p_fail_std']:.6f}")
             print(f"  ESS:             {m['ess']:.1f} / {m['n_rollouts']}")
-        print(f"  Reachability:    unsafe={m.get('reachability_unsafe')}")
+        print(
+            f"  Reachability:    unsafe={m.get('reachability_unsafe')} "
+            f"mode={m.get('reachability_mode')}"
+        )
+        if m.get("reachability_growth_ratio") is not None:
+            print(
+                f"  Box XY growth:   {m['reachability_growth_ratio']:.1f}× "
+                f"(blow-up={m.get('reachability_blowup_suspected')})"
+            )
+        if m.get("reachability_open_loop_unsafe") is not None:
+            print(
+                f"  Open-loop cmp:   unsafe={m.get('reachability_open_loop_unsafe')} "
+                f"growth={m.get('reachability_open_loop_growth_ratio')}"
+            )
         print(f"  Verdict:         {v.get('overall', 'n/a').upper()}")
         print()
         print("  Key assumptions:")
-        for a in report.assumptions[:4]:
+        for a in report.assumptions[:5]:
             print(f"   - {a}")
         print("   - … see report JSON for full list")
         print()

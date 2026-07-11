@@ -28,6 +28,10 @@ class ScenarioConfig:
     alpha: float = 0.7
     bias_factor: float = 2.2
     reachability_enabled: bool = True
+    reachability_mode: str = "receding"  # receding | open_loop | both
+    receding_window: int = 20
+    compare_open_loop: bool = True
+    blowup_growth_threshold: float = 50.0
     rare_events_enabled: bool = True
     ablation: bool = False
     min_mission_success: float = 0.90
