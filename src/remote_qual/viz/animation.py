@@ -23,8 +23,7 @@ def save_animated_dashboard(
     task_radius: float = 0.15,
 ) -> Path:
     import matplotlib.pyplot as plt
-    import matplotlib.patches as patches
-    import matplotlib.animation as animation
+    from matplotlib import animation, patches
     from matplotlib.colors import LogNorm
 
     from remote_qual.viz.static import _dose_grid

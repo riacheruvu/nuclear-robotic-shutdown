@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, Optional
 
-
 DISCLAIMER = (
     "Research qualification evidence for scientific exploration — "
     "not a regulatory certification. Read assumptions in the toolkit docs "

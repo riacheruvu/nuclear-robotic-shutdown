@@ -47,7 +47,6 @@ from __future__ import annotations
 
 import numpy as np
 
-
 SECONDS_PER_HOUR = 3600.0
 MIN_RANGE_M = 0.1
 

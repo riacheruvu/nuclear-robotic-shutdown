@@ -40,5 +40,20 @@ class ScenarioConfig:
     save_animation: bool = False
     report_path: Optional[str] = None
 
+    def validate_thresholds(self):
+        """Validate parameters are within meaningful ranges for ablation and real runs."""
+        if not (0.0 < self.alpha < 1.0):
+            raise ValueError(f"alpha must be in (0, 1) for defensive mixture IS, got {self.alpha}")
+        if self.bias_factor <= 0.0:
+            raise ValueError(f"bias_factor must be positive, got {self.bias_factor}")
+        if self.horizon <= 0:
+            raise ValueError(f"horizon must be positive, got {self.horizon}")
+        if self.dt <= 0.0:
+            raise ValueError(f"dt must be positive, got {self.dt}")
+        if self.task_radius_m <= 0.0 or self.corridor_radius_m <= 0.0:
+            raise ValueError("Task and corridor radii must be positive.")
+        if self.n_rollouts < 1:
+            raise ValueError(f"n_rollouts must be >= 1, got {self.n_rollouts}")
+
     def as_dict(self) -> Dict[str, Any]:
         return self.raw
