@@ -20,4 +20,4 @@ from remote_qual._version import __version__
 from remote_qual.pipeline import run_qualification
 from remote_qual.report.model import QualificationReport
 
-__all__ = ["__version__", "run_qualification", "QualificationReport"]
+__all__ = ["QualificationReport", "__version__", "run_qualification"]

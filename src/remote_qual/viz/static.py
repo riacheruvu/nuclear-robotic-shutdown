@@ -16,7 +16,7 @@ ASSUMPTION callout on figure: simplified dose model (see units docs).
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List, Optional, Union
+from typing import List, Union
 
 import numpy as np
 
@@ -44,7 +44,7 @@ def save_qualification_figure(
     n_traj_show: int = 20,
 ) -> Path:
     import matplotlib.pyplot as plt
-    import matplotlib.patches as patches
+    from matplotlib import patches
     from matplotlib.colors import LogNorm
 
     path = Path(path)

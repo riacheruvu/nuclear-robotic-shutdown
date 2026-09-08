@@ -7,7 +7,12 @@ from typing import Tuple
 import numpy as np
 import torch
 
-from remote_qual.plugins.base import ControllerPlugin, DynamicsPlugin, HazardPlugin, NoisePlugin
+from remote_qual.plugins.base import (
+    ControllerPlugin,
+    DynamicsPlugin,
+    HazardPlugin,
+    NoisePlugin,
+)
 
 
 def batched_rollouts(
